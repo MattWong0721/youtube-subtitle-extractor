@@ -26,34 +26,75 @@ def format_timestamp(seconds):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+SENTENCE_ENDINGS = re.compile(r'[.!?。！？]$')
+BUFFER_SECONDS = 30
+
+
 def fetch_transcript(video_id, max_minutes=None):
     ytt_api = YouTubeTranscriptApi()
     transcript = ytt_api.fetch(video_id)
 
-    entries = []
-    max_seconds = max_minutes * 60 if max_minutes else None
-
+    all_entries = []
     for snippet in transcript:
-        start = snippet.start
-        if max_seconds and start >= max_seconds:
-            break
-        entries.append({
+        all_entries.append({
             'start': snippet.start,
             'duration': snippet.duration,
             'text': snippet.text,
         })
-    return entries
+
+    if not max_minutes:
+        return all_entries
+
+    max_seconds = max_minutes * 60
+    buffer_limit = max_seconds + BUFFER_SECONDS
+
+    hard_cut = []
+    buffer_zone = []
+    for e in all_entries:
+        if e['start'] < max_seconds:
+            hard_cut.append(e)
+        elif e['start'] < buffer_limit:
+            buffer_zone.append(e)
+        else:
+            break
+
+    if not buffer_zone:
+        return hard_cut
+
+    last_sentence_idx = None
+    for i, e in enumerate(buffer_zone):
+        if SENTENCE_ENDINGS.search(e['text'].strip()):
+            last_sentence_idx = i
+
+    if last_sentence_idx is not None:
+        return hard_cut + buffer_zone[:last_sentence_idx + 1]
+
+    return hard_cut + buffer_zone
+
+
+def clamp_entries(entries):
+    clamped = []
+    for idx, e in enumerate(entries):
+        end = e['start'] + e['duration']
+        if idx + 1 < len(entries):
+            next_start = entries[idx + 1]['start']
+            if end > next_start:
+                end = next_start
+        clamped.append({**e, 'end': end})
+    return clamped
 
 
 def save_srt(entries, path):
+    entries = clamp_entries(entries)
     with open(path, 'w', encoding='utf-8') as f:
         for i, e in enumerate(entries, 1):
             start = format_timestamp(e['start'])
-            end = format_timestamp(e['start'] + e['duration'])
+            end = format_timestamp(e['end'])
             f.write(f"{i}\n{start} --> {end}\n{e['text']}\n\n")
 
 
 def save_csv(entries, path):
+    entries = clamp_entries(entries)
     with open(path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['Index', 'Start', 'End', 'Duration (s)', 'Text'])
@@ -61,13 +102,14 @@ def save_csv(entries, path):
             writer.writerow([
                 i,
                 format_timestamp(e['start']),
-                format_timestamp(e['start'] + e['duration']),
-                round(e['duration'], 2),
+                format_timestamp(e['end']),
+                round(e['end'] - e['start'], 2),
                 e['text'],
             ])
 
 
 def save_excel(entries, path):
+    entries = clamp_entries(entries)
     wb = Workbook()
     ws = wb.active
     ws.title = "Subtitles"
@@ -76,8 +118,8 @@ def save_excel(entries, path):
         ws.append([
             i,
             format_timestamp(e['start']),
-            format_timestamp(e['start'] + e['duration']),
-            round(e['duration'], 2),
+            format_timestamp(e['end']),
+            round(e['end'] - e['start'], 2),
             e['text'],
         ])
     for col in ['A', 'B', 'C', 'D', 'E']:

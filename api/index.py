@@ -10,7 +10,6 @@ app = Flask(__name__)
 
 SENTENCE_ENDINGS = re.compile(r'[.!?。！？]$')
 PUNCTUATION_BREAK = re.compile(r'[.!?,;:。！？，；：]$')
-MAX_MERGE_SECONDS = 7
 BUFFER_SECONDS = 30
 
 
@@ -103,32 +102,72 @@ def fetch_transcript(video_id, start_sec=None, end_sec=None, smart_cut=True):
 def merge_subtitles(entries):
     if not entries:
         return []
+
+    char_times = []
+    for e in entries:
+        text = e['text'].strip()
+        if not text:
+            continue
+        start = e['start']
+        dur = e['duration']
+        n = len(text)
+        for i, ch in enumerate(text):
+            t = start + dur * i / n
+            char_times.append((ch, t))
+        char_times.append((' ', start + dur))
+
+    full_text = ''.join(ch for ch, _ in char_times)
+
+    def is_real_break(i, ch):
+        before = full_text[max(0, i-5):i].lower()
+        after = full_text[i+1:i+4] if i+1 < len(full_text) else ''
+
+        if ch == ':':
+            if i > 0 and full_text[i-1].isdigit() and after and after[0].isdigit():
+                return False
+            return True
+
+        if ch == '.':
+            if before.endswith(('p.m', 'a.m', 'e.g', 'i.e', 'mr', 'mrs', 'dr', 'sr', 'jr', 'st', 'vs')):
+                return False
+            if i > 0 and full_text[i-1].isdigit() and after and after[0].isdigit():
+                return False
+            if after and after[0].isalpha() and not after[0:1].isupper() and after[0] != ' ':
+                return False
+            return True
+
+        return True
+
+    split_points = []
+    for i, (ch, _) in enumerate(char_times):
+        if ch in '!?;。！？；：':
+            split_points.append(i)
+        elif ch in '.,:' and is_real_break(i, ch):
+            split_points.append(i)
+
+    if not split_points or split_points[-1] != len(char_times) - 1:
+        split_points.append(len(char_times) - 1)
+
     merged = []
-    buf_texts = []
-    buf_start = entries[0]['start']
-
-    for idx, e in enumerate(entries):
-        buf_texts.append(e['text'].strip())
-        end = e['start'] + e['duration']
-        if idx + 1 < len(entries):
-            next_start = entries[idx + 1]['start']
-            if end > next_start:
-                end = next_start
-
-        text_so_far = ' '.join(buf_texts)
-        has_punctuation = PUNCTUATION_BREAK.search(text_so_far)
-        too_long = (end - buf_start) >= MAX_MERGE_SECONDS
-        is_last = idx == len(entries) - 1
-
-        if has_punctuation or too_long or is_last:
-            merged.append({
-                'start': buf_start,
-                'end': end,
-                'text': text_so_far,
-            })
-            if not is_last:
-                buf_texts = []
-                buf_start = entries[idx + 1]['start']
+    prev = 0
+    last_end = 0
+    for sp in split_points:
+        segment_text = full_text[prev:sp + 1].strip()
+        if not segment_text:
+            prev = sp + 1
+            continue
+        seg_start = max(char_times[prev][1], last_end)
+        seg_end = char_times[min(sp + 1, len(char_times) - 1)][1]
+        min_dur = max(0.5, len(segment_text) * 0.06)
+        if seg_end - seg_start < min_dur:
+            seg_end = seg_start + min_dur
+        merged.append({
+            'start': seg_start,
+            'end': seg_end,
+            'text': segment_text,
+        })
+        last_end = seg_end
+        prev = sp + 1
 
     return merged
 

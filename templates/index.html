@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Subtitle Extractor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: #fafafa;
+    color: #111;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 520px;
+    padding: 20px;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 6px;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: #888;
+    font-size: 0.85rem;
+    margin-bottom: 36px;
+  }
+
+  .input-group {
+    margin-bottom: 16px;
+  }
+
+  label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: #555;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  input[type="text"],
+  input[type="number"] {
+    width: 100%;
+    padding: 12px 14px;
+    font-size: 0.95rem;
+    border: 1.5px solid #ddd;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s;
+    background: #fff;
+  }
+
+  input:focus {
+    border-color: #111;
+  }
+
+  input::placeholder {
+    color: #bbb;
+  }
+
+  .duration-row {
+    display: flex;
+    gap: 10px;
+    align-items: end;
+  }
+
+  .duration-row .input-group { flex: 1; margin-bottom: 0; }
+
+  .duration-row .unit {
+    font-size: 0.85rem;
+    color: #888;
+    padding-bottom: 14px;
+  }
+
+  .btn {
+    width: 100%;
+    padding: 13px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-top: 8px;
+  }
+
+  .btn-primary {
+    background: #111;
+    color: #fff;
+  }
+
+  .btn-primary:hover { background: #333; }
+  .btn-primary:active { transform: scale(0.99); }
+  .btn-primary:disabled {
+    background: #999;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .result {
+    margin-top: 28px;
+    display: none;
+  }
+
+  .result.show { display: block; }
+
+  .result-info {
+    background: #f0f0f0;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+    color: #444;
+    line-height: 1.6;
+  }
+
+  .result-info strong { color: #111; }
+
+  .download-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .btn-dl {
+    padding: 11px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1.5px solid #ddd;
+    border-radius: 10px;
+    background: #fff;
+    color: #111;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-dl:hover {
+    border-color: #111;
+    background: #f8f8f8;
+  }
+
+  .btn-dl:active { transform: scale(0.98); }
+
+  .btn-all {
+    grid-column: 1 / -1;
+    background: #111;
+    color: #fff;
+    border-color: #111;
+  }
+
+  .btn-all:hover { background: #333; border-color: #333; }
+
+  .error {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: #fff0f0;
+    border: 1px solid #ffcdd2;
+    border-radius: 10px;
+    color: #c62828;
+    font-size: 0.85rem;
+    display: none;
+  }
+
+  .error.show { display: block; }
+
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  footer {
+    text-align: center;
+    margin-top: 40px;
+    font-size: 0.75rem;
+    color: #ccc;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>YouTube Subtitle Extractor</h1>
+  <p class="subtitle">Paste a link. Get subtitles.</p>
+
+  <div class="input-group">
+    <label>YouTube URL</label>
+    <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=..." autofocus>
+  </div>
+
+  <div class="duration-row">
+    <div class="input-group">
+      <label>Duration (optional)</label>
+      <input type="number" id="minutes" placeholder="e.g. 30" min="1">
+    </div>
+    <span class="unit">min</span>
+  </div>
+
+  <button class="btn btn-primary" id="extractBtn" onclick="extract()">Extract Subtitles</button>
+
+  <div class="error" id="error"></div>
+
+  <div class="result" id="result">
+    <div class="result-info" id="resultInfo"></div>
+    <div class="download-grid">
+      <button class="btn-dl" onclick="download('srt')">SRT</button>
+      <button class="btn-dl" onclick="download('csv')">CSV</button>
+      <button class="btn-dl" onclick="download('excel')">Excel</button>
+      <button class="btn-dl btn-all" onclick="download('all')">Download All (.zip)</button>
+    </div>
+  </div>
+
+  <footer>Extracts auto-generated or manual subtitles from YouTube.</footer>
+</div>
+
+<script>
+  let lastPayload = null;
+
+  async function extract() {
+    const url = document.getElementById('url').value.trim();
+    const minutes = document.getElementById('minutes').value.trim();
+    const btn = document.getElementById('extractBtn');
+    const errorEl = document.getElementById('error');
+    const resultEl = document.getElementById('result');
+
+    if (!url) { showError('Please paste a YouTube URL.'); return; }
+
+    errorEl.classList.remove('show');
+    resultEl.classList.remove('show');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Extracting...';
+
+    try {
+      const res = await fetch('/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, max_minutes: minutes || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showError(data.error); return; }
+
+      lastPayload = { url, max_minutes: minutes || null };
+      document.getElementById('resultInfo').innerHTML =
+        `<strong>${data.count}</strong> subtitle entries found &middot; ends at <strong>${data.actual_end}</strong>`;
+      resultEl.classList.add('show');
+    } catch (e) {
+      showError('Network error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Extract Subtitles';
+    }
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('error');
+    el.textContent = msg;
+    el.classList.add('show');
+  }
+
+  async function download(fmt) {
+    if (!lastPayload) return;
+    const res = await fetch('/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...lastPayload, format: fmt }),
+    });
+    if (!res.ok) { showError('Download failed.'); return; }
+    const blob = await res.blob();
+    const cd = res.headers.get('content-disposition');
+    const filename = cd ? cd.split('filename=')[1].replace(/"/g, '') : `subtitles.${fmt}`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  document.getElementById('url').addEventListener('keydown', e => {
+    if (e.key === 'Enter') extract();
+  });
+</script>
+</body>
+</html>

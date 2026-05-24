@@ -27,6 +27,8 @@ def format_timestamp(seconds):
 
 
 SENTENCE_ENDINGS = re.compile(r'[.!?。！？]$')
+PUNCTUATION_BREAK = re.compile(r'[.!?,;:。！？，；：]$')
+MAX_MERGE_SECONDS = 7
 BUFFER_SECONDS = 30
 
 
@@ -72,7 +74,7 @@ def fetch_transcript(video_id, max_minutes=None):
     return hard_cut + buffer_zone
 
 
-def merge_into_sentences(entries):
+def merge_subtitles(entries):
     if not entries:
         return []
     merged = []
@@ -88,10 +90,11 @@ def merge_into_sentences(entries):
                 end = next_start
 
         text_so_far = ' '.join(buf_texts)
-        is_sentence_end = SENTENCE_ENDINGS.search(text_so_far)
+        has_punctuation = PUNCTUATION_BREAK.search(text_so_far)
+        too_long = (end - buf_start) >= MAX_MERGE_SECONDS
         is_last = idx == len(entries) - 1
 
-        if is_sentence_end or is_last:
+        if has_punctuation or too_long or is_last:
             merged.append({
                 'start': buf_start,
                 'end': end,
@@ -105,7 +108,7 @@ def merge_into_sentences(entries):
 
 
 def save_srt(entries, path):
-    entries = merge_into_sentences(entries)
+    entries = merge_subtitles(entries)
     with open(path, 'w', encoding='utf-8') as f:
         for i, e in enumerate(entries, 1):
             start = format_timestamp(e['start'])
@@ -114,7 +117,7 @@ def save_srt(entries, path):
 
 
 def save_csv(entries, path):
-    entries = merge_into_sentences(entries)
+    entries = merge_subtitles(entries)
     with open(path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['Index', 'Start', 'End', 'Duration (s)', 'Text'])
@@ -129,7 +132,7 @@ def save_csv(entries, path):
 
 
 def save_excel(entries, path):
-    entries = merge_into_sentences(entries)
+    entries = merge_subtitles(entries)
     wb = Workbook()
     ws = wb.active
     ws.title = "Subtitles"

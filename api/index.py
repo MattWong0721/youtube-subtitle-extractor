@@ -169,11 +169,6 @@ def make_label(start_sec, end_sec):
     return "-".join(parts)
 
 
-@app.route('/')
-def index():
-    return send_file('public/index.html')
-
-
 @app.route('/api/extract', methods=['POST'])
 def extract():
     data = request.json
@@ -272,7 +267,3 @@ def download():
             as_attachment=True,
             download_name=f"{base}.zip",
         )
-
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5555)
